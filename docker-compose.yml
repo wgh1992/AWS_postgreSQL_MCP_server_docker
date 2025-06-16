@@ -7,21 +7,62 @@ services:
       dockerfile: Dockerfile
     container_name: mapai-mcp-server
     ports:
-      - "${PORT:-8883}:8883"
+      - "${PORT:-8883}:${PORT:-8883}"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - PORT=${PORT:-8883}
       - NODE_ENV=${NODE_ENV:-production}
+      - TZ=${TZ:-UTC}
     restart: unless-stopped
+    
+    # Resource limits for production safety
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    # Enhanced healthcheck
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:8883/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:${PORT:-8883}/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Labels for organization
+    labels:
+      - "project=mapai-mcp-server"
+      - "service=postgresql-mcp"
+      - "version=0.1.0"
+      - "maintainer=MapAI Team"
+    
     networks:
       - mcp-network
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Only expose necessary capabilities
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
 
 networks:
   mcp-network:
-    driver: bridge 
+    driver: bridge
+    name: mapai-mcp-network
+    labels:
+      - "project=mapai-mcp-server" 
