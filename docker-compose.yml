@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  mcp-postgres-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: mapai-mcp-server
+    ports:
+      - "${PORT:-8883}:8883"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - PORT=${PORT:-8883}
+      - NODE_ENV=${NODE_ENV:-production}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8883/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge 

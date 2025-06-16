@@ -1,0 +1,26 @@
+{
+  "name": "mapai-postgres-mcp-server",
+  "version": "0.1.0",
+  "description": "MapAI PostgreSQL MCP Server with HTTP endpoint",
+  "main": "postgreSQL_server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node postgreSQL_server.js",
+    "dev": "node --watch postgreSQL_server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "pg": "^8.11.3"
+  },
+  "keywords": [
+    "mcp",
+    "postgresql",
+    "database",
+    "server"
+  ],
+  "author": "MapAI Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+} 
