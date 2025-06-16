@@ -10,7 +10,7 @@ Copy the example environment file and configure your database:
 
 ```bash
 cp .env.example .env
-```
+```  
 
 Edit `.env` and set your `DATABASE_URL`:
 
