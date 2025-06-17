@@ -32,13 +32,13 @@ docker-compose up -d --build
 
 ```bash
 # Health check
-curl http://localhost:8883/health
+curl http://localhost:8833/health
 
 # Server info
-curl http://localhost:8883/
+curl http://localhost:8833/
 
 # Test MCP query (example)
-curl -X POST http://localhost:8883/mcp \
+curl -X POST http://localhost:8833/mcp \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -58,7 +58,7 @@ curl -X POST http://localhost:8883/mcp \
 ### Environment Variables
 
 - `DATABASE_URL`: PostgreSQL connection string (required)
-- `PORT`: Server port (default: 8883)
+- `PORT`: Server port (default: 8833)
 - `NODE_ENV`: Environment mode (default: production)
 
 ### Database URL Examples
@@ -84,7 +84,7 @@ DATABASE_URL=postgresql://user:password@your-cloud-sql-ip:5432/database
 docker build -t mapai-mcp-server .
 
 # Run container with environment variables
-docker run -p 8883:8883 \
+docker run -p 8833:8833 \
   -e DATABASE_URL="postgresql://user:pass@host:5432/db" \
   mapai-mcp-server
 

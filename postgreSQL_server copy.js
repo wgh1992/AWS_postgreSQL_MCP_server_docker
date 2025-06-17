@@ -7,8 +7,6 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import * as pg from "pg";
 import * as http from "http";
-import * as https from "https";
-import * as fs from "fs";
 import * as url from "url";
 
 const server = new Server(
@@ -22,12 +20,6 @@ const server = new Server(
     },
   },
 );
-
-// 使用环境变量控制是否启用HTTPS
-const ENABLE_HTTPS = process.env.ENABLE_HTTPS === 'true';
-const SSL_KEY_PATH = process.env.SSL_KEY_PATH || 'server.key';
-const SSL_CERT_PATH = process.env.SSL_CERT_PATH || 'server.crt';
-const SSL_CA_PATH = process.env.SSL_CA_PATH; // 可选的中间证书
 
 // Use the provided database URL - adjust host based on environment
 const databaseUrl = process.env.DATABASE_URL || "postgresql://mapai_data_reader:barfoo@localhost:5432/mapai_app_db";
@@ -123,54 +115,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   throw new Error(`Unknown tool: ${name}`);
 });
 
-// 检查SSL证书文件是否存在
-function checkSSLFiles() {
-  try {
-    if (!fs.existsSync(SSL_KEY_PATH)) {
-      throw new Error(`SSL key file not found: ${SSL_KEY_PATH}`);
-    }
-    if (!fs.existsSync(SSL_CERT_PATH)) {
-      throw new Error(`SSL certificate file not found: ${SSL_CERT_PATH}`);
-    }
-    return true;
-  } catch (error) {
-    console.error('SSL file check failed:', error.message);
-    return false;
-  }
-}
-
-// 创建服务器选项
-function createServerOptions() {
-  if (!ENABLE_HTTPS) {
-    return null; // HTTP模式
-  }
-
-  if (!checkSSLFiles()) {
-    console.warn('⚠️  SSL files not found, falling back to HTTP mode');
-    return null;
-  }
-
-  try {
-    const options = {
-      key: fs.readFileSync(SSL_KEY_PATH),
-      cert: fs.readFileSync(SSL_CERT_PATH)
-    };
-
-    // 如果有中间证书链，添加它
-    if (SSL_CA_PATH && fs.existsSync(SSL_CA_PATH)) {
-      options.ca = fs.readFileSync(SSL_CA_PATH);
-    }
-
-    return options;
-  } catch (error) {
-    console.error('Failed to read SSL files:', error.message);
-    console.warn('⚠️  Falling back to HTTP mode');
-    return null;
-  }
-}
-
-// 请求处理函数
-async function handleRequest(req, res) {
+// HTTP Server for direct HTTP communication (no SSE)
+const httpServer = http.createServer(async (req, res) => {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -184,7 +130,7 @@ async function handleRequest(req, res) {
 
   const parsedUrl = url.parse(req.url || '', true);
   
-  // Handle MCP messages via direct HTTP/HTTPS POST
+  // Handle MCP messages via direct HTTP POST
   if (parsedUrl.pathname === '/mcp' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => {
@@ -304,7 +250,7 @@ async function handleRequest(req, res) {
           result: response
         };
 
-        // Send response
+        // Send HTTP response
         res.setHeader('Content-Type', 'application/json');
         res.writeHead(200);
         res.end(JSON.stringify(responseData, null, 2));
@@ -347,7 +293,7 @@ async function handleRequest(req, res) {
         status: 'healthy', 
         server: 'mcp-postgres-mapai',
         database: 'connected',
-        protocol: ENABLE_HTTPS ? 'HTTPS' : 'HTTP',
+        protocol: 'HTTP',
         timestamp: new Date().toISOString()
       }));
     } catch (error) {
@@ -368,7 +314,7 @@ async function handleRequest(req, res) {
     res.end(JSON.stringify({
       name: "MapAI PostgreSQL MCP Server",
       version: "0.1.0",
-      protocol: ENABLE_HTTPS ? "HTTPS" : "HTTP",
+      protocol: "HTTP",
       endpoints: {
         mcp: "/mcp",
         health: "/health"
@@ -381,19 +327,13 @@ async function handleRequest(req, res) {
     res.writeHead(404);
     res.end(JSON.stringify({error: 'Not Found', path: parsedUrl.pathname}));
   }
-}
-
-// 创建服务器（HTTP或HTTPS）
-const sslOptions = createServerOptions();
-const appServer = sslOptions 
-  ? https.createServer(sslOptions, handleRequest)
-  : http.createServer(handleRequest);
+});
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('Shutting down server...');
   await pool.end();
-  appServer.close(() => {
+  httpServer.close(() => {
     console.log('Server stopped');
     process.exit(0);
   });
@@ -402,16 +342,14 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
   console.log('Shutting down server...');
   await pool.end();
-  appServer.close(() => {
+  httpServer.close(() => {
     console.log('Server stopped');
     process.exit(0);
   });
 });
 
 async function runServer() {
-  // 根据是否启用HTTPS设置默认端口
-  const defaultPort = sslOptions ? 443 : 8833;
-  let port = process.env.PORT ? parseInt(process.env.PORT) : defaultPort;
+  let port = process.env.PORT ? parseInt(process.env.PORT) : 8833;
   
   try {
     // Test database connection on startup
@@ -422,7 +360,7 @@ async function runServer() {
     // Function to try starting server on a port
     const tryPort = (portToTry) => {
       return new Promise((resolve, reject) => {
-        const server = appServer.listen(portToTry, '0.0.0.0', () => {
+        const server = httpServer.listen(portToTry, '0.0.0.0', () => {
           resolve(portToTry);
         });
         
@@ -438,25 +376,14 @@ async function runServer() {
     };
     
     const finalPort = await tryPort(port);
-    const protocol = sslOptions ? 'HTTPS' : 'HTTP';
-    const scheme = sslOptions ? 'https' : 'http';
     
-    console.log(`🚀 MCP PostgreSQL ${protocol} server running on port ${finalPort}`);
-    console.log(`📡 MCP endpoint: ${scheme}://localhost:${finalPort}/mcp`);
-    console.log(`🏥 Health check: ${scheme}://localhost:${finalPort}/health`);
-    console.log(`ℹ️  Server info: ${scheme}://localhost:${finalPort}/`);
+    console.log(`🚀 MCP PostgreSQL HTTP server running on port ${finalPort}`);
+    console.log(`📡 MCP endpoint: http://localhost:${finalPort}/mcp`);
+    console.log(`🏥 Health check: http://localhost:${finalPort}/health`);
+    console.log(`ℹ️  Server info: http://localhost:${finalPort}/`);
     console.log(`🗄️  Connected to database: mapai_app_db`);
     console.log(`🔧 Available tools: query`);
-    console.log(`📝 Protocol: Direct ${protocol}`);
-    
-    if (sslOptions) {
-      console.log(`🔐 SSL/TLS enabled`);
-    } else {
-      console.log(`🔓 Running in HTTP mode`);
-      if (ENABLE_HTTPS) {
-        console.log(`ℹ️  To enable HTTPS, ensure SSL certificate files exist`);
-      }
-    }
+    console.log(`📝 Protocol: Direct HTTP (no SSE)`);
     
   } catch (error) {
     console.error('❌ Failed to start server:', error);
